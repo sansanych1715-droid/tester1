@@ -394,12 +394,27 @@ function getQuestionsByCategories(categories) {
   );
 }
 
+/* ------------------------------------------------------------------ */
+/* T005: Topic Statistics Helper - Dynamic category enumeration        */
+/* ------------------------------------------------------------------ */
+function getTopicStats() {
+  const counts = new Map();
+  for (const q of Object.values(QUESTION_BANK)) {
+    const cat = q.category;
+    counts.set(cat, (counts.get(cat) || 0) + 1);
+  }
+  return Array.from(counts.entries())
+    .map(([name, count]) => ({ name, count }))
+    .filter((entry) => entry.count > 0)
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
 function shuffleArray(arr) {
   return [...arr].sort(() => Math.random() - 0.5);
 }
 
 /* ------------------------------------------------------------------ */
-/* T006: Quick Test Session Helper - Random question selection        */
+/* T002: Quick Test Session Helper - Random question selection        */
 /* ------------------------------------------------------------------ */
 function startQuickTestSession() {
   const allQuestions = getQuestionsByCategories(['all']);
@@ -545,6 +560,11 @@ function HomeView() {
         "button",
         { onClick: () => ctx.setCurrentView("dashboard") },
         "Прогрес",
+      ),
+      React.createElement(
+        "button",
+        { onClick: () => ctx.setCurrentView("topic-select") },
+        "Test by Topic",
       ),
     ),
     React.createElement(
@@ -966,6 +986,52 @@ function ProgressDashboardView() {
 }
 
 /* ------------------------------------------------------------------ */
+/* T006: TopicSelectView Component - Category selection screen        */
+/* T007: Home navigation button in TopicSelectView                    */
+/* ------------------------------------------------------------------ */
+function TopicSelectView() {
+  const ctx = React.useContext(AppContext);
+  const topics = getTopicStats();
+
+  const handleTopicSelect = (categoryName) => {
+    ctx.setSelectedCategories([categoryName]);
+    ctx.setCurrentView("practice");
+  };
+
+  return React.createElement(
+    "div",
+    { className: "home-view" },
+    React.createElement(
+      "h1",
+      { id: "main-content" },
+      "Виберіть тему для тесту"
+    ),
+    React.createElement(
+      "div",
+      { className: "mode-buttons" },
+      topics.map((topic) =>
+        React.createElement(
+          "button",
+          {
+            key: topic.name,
+            onClick: () => handleTopicSelect(topic.name),
+          },
+          `${topic.name} (${topic.count} питань)`
+        )
+      ),
+      React.createElement(
+        "button",
+        {
+          onClick: () => ctx.setCurrentView("home"),
+          className: "quick-test-back-btn",
+        },
+        "← Назад",
+      ),
+    ),
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /* App Component - Main router                                       */
 /* ------------------------------------------------------------------ */
 function App() {
@@ -983,6 +1049,9 @@ function App() {
       break;
     case "dashboard":
       renderedView = React.createElement(ProgressDashboardView);
+      break;
+    case "topic-select":
+      renderedView = React.createElement(TopicSelectView);
       break;
     default:
       renderedView = React.createElement(HomeView);
