@@ -2,6 +2,7 @@
 /* T000: Translation Constants                                              */
 /* ------------------------------------------------------------------ */
 const QUICK_TEST_BUTTON_LABEL = "Швидкий тест";
+const INTERVIEW_TEST_BUTTON_LABEL = "Інтерв'ю тест";
 
 /* ------------------------------------------------------------------ */
 /* T004: Encryption Module (Web Crypto API - AES-GCM, PBKDF2)        */
@@ -242,9 +243,12 @@ function AppProvider({ children }) {
   const [selectedCategories, setSelectedCategories] = React.useState(["all"]);
   const [searchTerm, setSearchTerm] = React.useState("");
   const [activeCategoryId, setActiveCategoryId] = React.useState(null);
-  const [quickTestSession, setQuickTestSession] = React.useState(null);
+    const [quickTestSession, setQuickTestSession] = React.useState(null);
   const [quickTestQuestions, setQuickTestQuestions] = React.useState([]);
   const [quickTestIndex, setQuickTestIndex] = React.useState(0);
+  const [interviewTestSession, setInterviewTestSession] = React.useState(null);
+  const [interviewTestQuestions, setInterviewTestQuestions] = React.useState([]);
+  const [interviewTestIndex, setInterviewTestIndex] = React.useState(0);
 
   const setCurrentQuickTestSession = React.useCallback((questions) => {
     const sessionId = 'quick-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
@@ -261,6 +265,23 @@ function AppProvider({ children }) {
       isCompleted: false
     });
     setCurrentView('quick');
+  }, []);
+
+  const setCurrentInterviewTestSession = React.useCallback((questions) => {
+    const sessionId = 'interview-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+    setInterviewTestQuestions(questions);
+    setInterviewTestIndex(0);
+    setInterviewTestSession({
+      id: sessionId,
+      type: 'interview',
+      questionIds: questions.map(q => q.id),
+      startTime: Date.now(),
+      elapsedTime: 0,
+      currentQuestionIndex: 0,
+      userAnswers: {},
+      isCompleted: false
+    });
+    setCurrentView('interview');
   }, []);
 
   React.useEffect(() => {
@@ -284,7 +305,7 @@ function AppProvider({ children }) {
       setSelectedCategories(prefs.selectedCategories);
   }, []);
 
-  const resetProgress = React.useCallback(async () => {
+    const resetProgress = React.useCallback(async () => {
     const fresh = await DataAccessLayer.resetData();
     setAppData(fresh);
     setSelectedCategories(["all"]);
@@ -293,6 +314,9 @@ function AppProvider({ children }) {
     setQuickTestSession(null);
     setQuickTestQuestions([]);
     setQuickTestIndex(0);
+    setInterviewTestSession(null);
+    setInterviewTestQuestions([]);
+    setInterviewTestIndex(0);
   }, []);
 
   const saveSession = React.useCallback(async (sessionType, summaryScore) => {
@@ -326,7 +350,7 @@ function AppProvider({ children }) {
         setSearchTerm,
         activeCategoryId,
         setActiveCategoryId,
-                persistRating,
+        persistRating,
         savePreferences,
         resetProgress,
         saveSession,
@@ -336,6 +360,11 @@ function AppProvider({ children }) {
         quickTestIndex,
         setQuickTestIndex,
         setCurrentQuickTestSession,
+        interviewTestSession,
+        interviewTestQuestions,
+        interviewTestIndex,
+        setInterviewTestIndex,
+        setCurrentInterviewTestSession,
       },
     },
     children,
@@ -418,6 +447,15 @@ function shuffleArray(arr) {
 /* ------------------------------------------------------------------ */
 function startQuickTestSession() {
   const allQuestions = getQuestionsByCategories(['all']);
+  const selectedQuestions = shuffleArray(allQuestions).slice(0, 10);
+  return selectedQuestions;
+}
+
+/* ------------------------------------------------------------------ */
+/* T015a: Interview Test Session Helper - Random question selection   */
+/* ------------------------------------------------------------------ */
+function startInterviewTestSession() {
+  const allQuestions = Object.values(QUESTION_INTERVUER);
   const selectedQuestions = shuffleArray(allQuestions).slice(0, 10);
   return selectedQuestions;
 }
@@ -530,6 +568,10 @@ function HomeView() {
     const questions = startQuickTestSession();
     ctx.setCurrentQuickTestSession(questions);
   };
+  const handleInterviewTest = () => {
+    const questions = startInterviewTestSession();
+    ctx.setCurrentInterviewTestSession(questions);
+  };
   return React.createElement(
     "div",
     { className: "home-view" },
@@ -574,6 +616,14 @@ function HomeView() {
         onClick: handleQuickTest,
       },
       QUICK_TEST_BUTTON_LABEL,
+    ),
+    React.createElement(
+      "button",
+      {
+        className: "interview-test-btn",
+        onClick: handleInterviewTest,
+      },
+      INTERVIEW_TEST_BUTTON_LABEL,
     ),
   );
 }
@@ -752,6 +802,92 @@ function QuickTestView() {
           shortAnswer: currentQuestion.shortAnswer,
           onRating: handleRating,
         }),
+    );
+}
+
+/* ------------------------------------------------------------------ */
+/* T015b: InterviewTestView Component - Interview test flow          */
+/* ------------------------------------------------------------------ */
+function InterviewTestView() {
+  const ctx = React.useContext(AppContext);
+  const questions = ctx.interviewTestQuestions;
+  const [currentIndex, setCurrentIndex] = React.useState(ctx.interviewTestIndex || 0);
+  const [showAnswer, setShowAnswer] = React.useState(false);
+  const [userRating, setUserRating] = React.useState(null);
+  const total = questions.length;
+
+  React.useEffect(() => {
+    setCurrentIndex(ctx.interviewTestIndex || 0);
+  }, [ctx.interviewTestIndex]);
+
+  const handleRating = (rating) => {
+    const q = questions[currentIndex];
+    setUserRating(rating);
+    setShowAnswer(false);
+    ctx.persistRating(q.id, {
+      rating: rating,
+      weight: q.weight,
+      timestamp: Date.now(),
+    });
+    ctx.setInterviewTestIndex(currentIndex + 1);
+    if (currentIndex < total - 1) {
+      setCurrentIndex(currentIndex + 1);
+    } else {
+      const sessionScore = ScoringUtility.calculateWeightedScore(
+        ctx.appData.ratings
+      );
+      ctx.saveSession("interview", Math.round(sessionScore));
+      ctx.setCurrentView("results");
+    }
+  };
+
+  if (!questions || questions.length === 0) {
+    return React.createElement(
+      "div",
+      { className: "practice-view" },
+      React.createElement("p", null, "«Немає питань для тестування»."),
+    );
+  }
+
+  const currentQuestion = questions[currentIndex];
+
+  return React.createElement(
+    "div",
+    { className: "practice-view" },
+    React.createElement(
+      "div",
+      { className: "quick-test-header" },
+      React.createElement(
+        "button",
+        {
+          onClick: () => {
+            ctx.setCurrentView("home");
+          },
+          className: "quick-test-back-btn",
+        },
+        "← Назад",
+      ),
+      React.createElement(
+        "p",
+        { className: "quick-test-progress" },
+        "Питань " + (currentIndex + 1) + " з " + total,
+      ),
+    ),
+    React.createElement(ProgressIndicator, {
+      current: currentIndex + 1,
+      total: total,
+    }),
+    !showAnswer
+      ? React.createElement(QuestionCard, {
+          key: currentQuestion.id,
+          question: currentQuestion,
+          onSubmit: () => setShowAnswer(true),
+        })
+      : React.createElement(AnswersPanel, {
+          idealAnswer: currentQuestion.idealAnswer,
+          shortAnswer: currentQuestion.shortAnswer,
+          onRating: handleRating,
+        }),
   );
 }
 
@@ -885,6 +1021,7 @@ function ProgressDashboardView() {
 
   const sessionTypeLabel = (type) => {
     if (type === "quick") return "Швидкий тест";
+    if (type === "interview") return "Інтерв'ю тест";
     if (type === "practice") return "Практика";
     return type;
   };
@@ -1043,6 +1180,9 @@ function App() {
       break;
     case "quick":
       renderedView = React.createElement(QuickTestView);
+      break;
+    case "interview":
+      renderedView = React.createElement(InterviewTestView);
       break;
     case "results":
       renderedView = React.createElement(ResultsView);
